@@ -1,15 +1,96 @@
 """Session management for conversation continuity."""
 
 import asyncio
+import hashlib
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..models.anthropic import Message
 
 logger = logging.getLogger(__name__)
+
+
+def compute_session_hash(messages: List[Dict[str, Any]]) -> Optional[str]:
+    """
+    Compute hash of conversation history up to last assistant message.
+
+    Used to identify sessions without requiring explicit session_id.
+
+    Args:
+        messages: List of message dicts with 'role' and 'content'
+
+    Returns:
+        20-char hash string, or None if no assistant message found
+    """
+    if not messages:
+        return None
+
+    # Extract history up to and including last assistant message
+    history = []
+    last_history = None
+
+    for msg in messages:
+        # Normalize message to only role and content
+        normalized = {
+            "role": msg.get("role"),
+            "content": msg.get("content"),
+        }
+        history.append(normalized)
+
+        if msg.get("role") == "assistant":
+            last_history = history.copy()
+
+    if not last_history:
+        return None
+
+    # Compute hash
+    data = json.dumps(last_history, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(data.encode()).hexdigest()[:20]
+
+
+def extract_new_messages(
+    messages: List[Dict[str, Any]],
+    hash_to_session: Dict[str, str],
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+    """
+    Extract new messages from conversation, identify session via hash.
+
+    Args:
+        messages: Full message history from client
+        hash_to_session: Mapping of content hash to session_id
+
+    Returns:
+        Tuple of (session_id or None, list of new messages)
+    """
+    if not messages:
+        return None, []
+
+    # Find last assistant message index
+    last_assistant_idx = None
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == "assistant":
+            last_assistant_idx = i
+            break
+
+    # No assistant message = entirely new conversation
+    if last_assistant_idx is None:
+        return None, messages
+
+    # Compute hash of history up to last assistant
+    history_for_hash = messages[: last_assistant_idx + 1]
+    session_hash = compute_session_hash(history_for_hash)
+
+    # Look up session
+    session_id = hash_to_session.get(session_hash) if session_hash else None
+
+    # Messages after last assistant are new
+    new_messages = messages[last_assistant_idx + 1 :]
+
+    return session_id, new_messages
 
 
 @dataclass
@@ -60,6 +141,7 @@ class SessionManager:
             cleanup_interval_seconds: Interval between cleanup runs
         """
         self.sessions: Dict[str, Session] = {}
+        self.hash_to_session: Dict[str, str] = {}  # content_hash → session_id
         self.lock = Lock()
         self.ttl_hours = ttl_hours
         self.cleanup_interval = cleanup_interval_seconds
@@ -163,9 +245,75 @@ class SessionManager:
                 return session.claude_session_id
             return None
 
+    def store_hash_mapping(
+        self, messages: List[Dict[str, Any]], session_id: str
+    ) -> Optional[str]:
+        """
+        Store hash → session_id mapping for conversation history.
+
+        Args:
+            messages: Conversation history (should include assistant response)
+            session_id: Session identifier to map to
+
+        Returns:
+            The computed hash, or None if no assistant message
+        """
+        hash_value = compute_session_hash(messages)
+        if hash_value:
+            with self.lock:
+                self.hash_to_session[hash_value] = session_id
+                logger.debug(f"Stored hash mapping: {hash_value[:8]}... → {session_id}")
+        return hash_value
+
+    def find_session_by_hash(
+        self, messages: List[Dict[str, Any]]
+    ) -> Optional[str]:
+        """
+        Find session_id by computing hash of message history.
+
+        Args:
+            messages: Conversation history from client
+
+        Returns:
+            session_id if found, None otherwise
+        """
+        hash_value = compute_session_hash(messages)
+        if not hash_value:
+            return None
+
+        with self.lock:
+            session_id = self.hash_to_session.get(hash_value)
+            if session_id:
+                # Verify session still exists and not expired
+                session = self.sessions.get(session_id)
+                if session and not session.is_expired():
+                    logger.debug(
+                        f"Found session by hash: {hash_value[:8]}... → {session_id}"
+                    )
+                    return session_id
+                # Clean up stale mapping
+                del self.hash_to_session[hash_value]
+            return None
+
+    def find_session_and_extract_new(
+        self, messages: List[Dict[str, Any]]
+    ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+        """
+        Find session from messages and extract new messages.
+
+        Convenience method combining hash lookup and message extraction.
+
+        Args:
+            messages: Full message history from client
+
+        Returns:
+            Tuple of (session_id or None, new messages to process)
+        """
+        return extract_new_messages(messages, self.hash_to_session)
+
     def delete(self, session_id: str) -> bool:
         """
-        Delete a session.
+        Delete a session and its hash mappings.
 
         Args:
             session_id: Session identifier
@@ -176,7 +324,16 @@ class SessionManager:
         with self.lock:
             if session_id in self.sessions:
                 del self.sessions[session_id]
-                logger.debug(f"Deleted session: {session_id}")
+                # Clean up hash mappings for this session
+                stale_hashes = [
+                    h for h, s in self.hash_to_session.items() if s == session_id
+                ]
+                for h in stale_hashes:
+                    del self.hash_to_session[h]
+                logger.debug(
+                    f"Deleted session: {session_id}, "
+                    f"removed {len(stale_hashes)} hash mappings"
+                )
                 return True
             return False
 
@@ -232,13 +389,25 @@ class SessionManager:
         )
 
     def _cleanup_expired(self) -> None:
-        """Remove expired sessions."""
+        """Remove expired sessions and their hash mappings."""
         with self.lock:
             expired = [k for k, v in self.sessions.items() if v.is_expired()]
             for k in expired:
                 del self.sessions[k]
+
+            # Clean up hash mappings for expired sessions
+            expired_set = set(expired)
+            stale_hashes = [
+                h for h, s in self.hash_to_session.items() if s in expired_set
+            ]
+            for h in stale_hashes:
+                del self.hash_to_session[h]
+
             if expired:
-                logger.debug(f"Cleaned up {len(expired)} expired sessions")
+                logger.debug(
+                    f"Cleaned up {len(expired)} expired sessions, "
+                    f"{len(stale_hashes)} hash mappings"
+                )
 
     def shutdown(self) -> None:
         """Shutdown cleanup task."""

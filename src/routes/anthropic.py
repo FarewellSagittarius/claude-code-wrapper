@@ -58,6 +58,8 @@ class MessagesContext:
     enable_internal_mcp: bool
     mcp_servers_dict: Optional[Dict[str, Any]]
     max_thinking_tokens: Optional[int] = None
+    session_id: Optional[str] = None  # Determined session ID (via hash or explicit)
+    messages_for_hash: Optional[List[Dict[str, Any]]] = None  # Original messages for hash storage
 
 
 async def _build_messages_context(
@@ -66,11 +68,6 @@ async def _build_messages_context(
 ) -> MessagesContext:
     """Build shared context for messages processing."""
     request_id = f"msg_{uuid.uuid4().hex[:24]}"
-
-    # Get Claude session ID if resuming
-    claude_session_id = None
-    if request.session_id:
-        claude_session_id = session_manager.get_claude_session(request.session_id)
 
     # Convert to Claude format (files saved to cache in cwd)
     cwd = claude_service.cwd if claude_service else None
@@ -89,6 +86,26 @@ async def _build_messages_context(
                 elif isinstance(block, dict):
                     content_blocks.append(block)
             internal_messages.append({"role": msg.role, "content": content_blocks})
+
+    # Try to find session via hash-based identification
+    # This allows session continuity without explicit session_id
+    session_id, new_messages = session_manager.find_session_and_extract_new(internal_messages)
+
+    # Fall back to explicit session_id if hash lookup failed
+    if not session_id and request.session_id:
+        session_id = request.session_id
+        new_messages = internal_messages  # Use all messages if no hash match
+
+    # Get Claude session ID if we have a session
+    claude_session_id = None
+    if session_id:
+        claude_session_id = session_manager.get_claude_session(session_id)
+        logger.debug(f"Session {session_id}: claude_session={claude_session_id}")
+
+    # Generate new session_id if needed (for new conversations)
+    if not session_id:
+        session_id = f"sess_{uuid.uuid4().hex[:16]}"
+        logger.debug(f"Created new session: {session_id}")
 
     prompt, system_prompt = await AnthropicAdapter.to_claude_prompt(
         [Message(**m) for m in internal_messages],
@@ -141,6 +158,8 @@ async def _build_messages_context(
         enable_internal_mcp=enable_internal_mcp,
         mcp_servers_dict=mcp_servers_dict,
         max_thinking_tokens=max_thinking_tokens,
+        session_id=session_id,
+        messages_for_hash=internal_messages,  # Store for hash mapping after response
     )
 
 
@@ -265,10 +284,10 @@ async def generate_anthropic_stream(ctx: MessagesContext):
             messages_buffer.append(chunk)
 
             # Extract and store Claude session ID
-            if chunk.get("subtype") == "init" and request.session_id:
+            if chunk.get("subtype") == "init" and ctx.session_id:
                 new_session_id = claude_service.get_session_id([chunk])
                 if new_session_id:
-                    session_manager.set_claude_session(request.session_id, new_session_id)
+                    session_manager.set_claude_session(ctx.session_id, new_session_id)
 
             # Extract content
             content = _extract_content(chunk)
@@ -299,12 +318,18 @@ async def generate_anthropic_stream(ctx: MessagesContext):
                 )
                 yield f"event: content_block_delta\ndata: {block_delta.model_dump_json()}\n\n"
 
-        # Store response in session
-        if request.session_id and accumulated_content:
+        # Store response in session and hash mapping for future lookups
+        if ctx.session_id and accumulated_content:
             session_manager.add_response(
-                request.session_id,
+                ctx.session_id,
                 Message(role="assistant", content=accumulated_content),
             )
+            # Store hash mapping: conversation + response → session_id
+            if ctx.messages_for_hash:
+                messages_with_response = ctx.messages_for_hash + [
+                    {"role": "assistant", "content": accumulated_content}
+                ]
+                session_manager.store_hash_mapping(messages_with_response, ctx.session_id)
 
         # Send content_block_stop if we started content
         if content_started:
@@ -360,21 +385,27 @@ async def generate_anthropic_response(ctx: MessagesContext) -> MessagesResponse:
             messages_buffer.append(chunk)
 
             # Extract and store Claude session ID
-            if chunk.get("subtype") == "init" and request.session_id:
+            if chunk.get("subtype") == "init" and ctx.session_id:
                 new_session_id = claude_service.get_session_id([chunk])
                 if new_session_id:
-                    session_manager.set_claude_session(request.session_id, new_session_id)
+                    session_manager.set_claude_session(ctx.session_id, new_session_id)
 
         # Extract and filter response
         raw_content = claude_service.extract_response(messages_buffer)
         content = AnthropicAdapter.filter_response(raw_content or "")
 
-        # Store in session
-        if request.session_id and content:
+        # Store in session and hash mapping for future lookups
+        if ctx.session_id and content:
             session_manager.add_response(
-                request.session_id,
+                ctx.session_id,
                 Message(role="assistant", content=content),
             )
+            # Store hash mapping: conversation + response → session_id
+            if ctx.messages_for_hash:
+                messages_with_response = ctx.messages_for_hash + [
+                    {"role": "assistant", "content": content}
+                ]
+                session_manager.store_hash_mapping(messages_with_response, ctx.session_id)
 
         # Get usage (real or estimated)
         usage_data = claude_service.extract_usage(messages_buffer)
