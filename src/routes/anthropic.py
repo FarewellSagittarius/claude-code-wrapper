@@ -400,6 +400,14 @@ async def generate_anthropic_stream(ctx: MessagesContext):
             # Send message_stop
             message_stop = MessageStop()
             yield f"event: message_stop\ndata: {message_stop.model_dump_json()}\n\n"
+
+            # Store hash mapping for tool_use response (session continuity)
+            if ctx.session_id and ctx.messages_for_hash:
+                tool_use_content = [{"type": "tool_use", "id": tool_use.id, "name": tool_use.name, "input": tool_use.input}]
+                messages_with_response = ctx.messages_for_hash + [
+                    {"role": "assistant", "content": tool_use_content}
+                ]
+                session_manager.store_hash_mapping(messages_with_response, ctx.session_id)
             return
 
         # Store response in session and hash mapping for future lookups
@@ -483,6 +491,14 @@ async def generate_anthropic_response(ctx: MessagesContext) -> MessagesResponse:
             usage_data = claude_service.extract_usage(messages_buffer)
             if not usage_data:
                 usage_data = claude_service.estimate_usage(ctx.prompt, "", request.model)
+
+            # Store hash mapping for tool_use response (session continuity)
+            if ctx.session_id and ctx.messages_for_hash:
+                tool_use_content = [{"type": "tool_use", "id": tool_use.id, "name": tool_use.name, "input": tool_use.input}]
+                messages_with_response = ctx.messages_for_hash + [
+                    {"role": "assistant", "content": tool_use_content}
+                ]
+                session_manager.store_hash_mapping(messages_with_response, ctx.session_id)
 
             # Return tool_use response to client
             return MessagesResponse(
