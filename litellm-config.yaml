@@ -1,0 +1,35 @@
+model_list:
+  # Model aliases mapping to wrapper's Anthropic endpoint
+  - model_name: claude-code-opus
+    litellm_params:
+      model: anthropic/claude-code-opus
+      api_base: http://host.docker.internal:8790/v1
+
+  - model_name: claude-code-sonnet
+    litellm_params:
+      model: anthropic/claude-code-sonnet
+      api_base: http://host.docker.internal:8790/v1
+
+  - model_name: claude-code-haiku
+    litellm_params:
+      model: anthropic/claude-code-haiku
+      api_base: http://host.docker.internal:8790/v1
+
+litellm_settings:
+  drop_params: false
+  # Allow wrapper extension parameters to pass through
+  allowed_openai_params:
+    - session_id
+    - mcp_servers
+    - allowed_tools
+    - disallowed_tools
+    - max_turns
+
+general_settings:
+  # Passthrough endpoints for native Anthropic format
+  pass_through_endpoints:
+    - path: "/anthropic/v1/messages"
+      target: "http://host.docker.internal:8790/v1/messages"
+      headers:
+        - "authorization"
+        - "anthropic-version"
