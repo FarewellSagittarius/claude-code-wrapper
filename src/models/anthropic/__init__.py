@@ -16,6 +16,7 @@ from .request import (
     Message,
     MessagesRequest,
     ThinkingConfig,
+    ToolDefinition,
 )
 from .response import (
     ContentBlockDelta,
@@ -45,6 +46,7 @@ __all__ = [
     "Message",
     "MessagesRequest",
     "ThinkingConfig",
+    "ToolDefinition",
     # Response
     "ContentBlockDelta",
     "ContentBlockStart",

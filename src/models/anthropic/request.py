@@ -22,6 +22,16 @@ class ThinkingConfig(BaseModel):
     budget_tokens: int = Field(ge=1024, description="Thinking token budget, minimum 1024")
 
 
+class ToolDefinition(BaseModel):
+    """Anthropic tool definition format."""
+
+    name: str
+    description: Optional[str] = None
+    input_schema: Dict[str, Any] = Field(
+        default_factory=lambda: {"type": "object", "properties": {}}
+    )
+
+
 class MessagesRequest(BaseModel):
     """Anthropic Messages API request."""
 
@@ -38,6 +48,10 @@ class MessagesRequest(BaseModel):
 
     # Extended thinking (native Anthropic format)
     thinking: Optional[ThinkingConfig] = None
+
+    # Tool definitions (Anthropic native format)
+    tools: Optional[List[ToolDefinition]] = None
+    tool_choice: Optional[Dict[str, Any]] = None  # auto, any, tool, none
 
     # Wrapper-specific extensions
     session_id: Optional[str] = None
