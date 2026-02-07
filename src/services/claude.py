@@ -38,31 +38,22 @@ def load_user_mcp_servers(cwd: str) -> Dict[str, Any]:
 
     projects = config.get("projects", {})
     cwd_normalized = str(Path(cwd).resolve())
-
-    # Try exact match first
-    if cwd_normalized in projects:
-        mcp_servers = projects[cwd_normalized].get("mcpServers", {})
-        if mcp_servers:
-            logger.info(f"Loaded {len(mcp_servers)} MCP servers: {list(mcp_servers.keys())}")
-            return mcp_servers
-
-    # Try parent path match
-    for project_path, project_config in projects.items():
-        if cwd_normalized.startswith(project_path):
-            mcp_servers = project_config.get("mcpServers", {})
-            if mcp_servers:
-                logger.info(f"Loaded {len(mcp_servers)} MCP servers from {project_path}: {list(mcp_servers.keys())}")
-                return mcp_servers
-
-    # Fallback: try user's home directory config
     home_str = str(home)
-    if home_str in projects:
-        mcp_servers = projects[home_str].get("mcpServers", {})
-        if mcp_servers:
-            logger.info(f"Loaded {len(mcp_servers)} MCP servers from home ({home_str}): {list(mcp_servers.keys())}")
-            return mcp_servers
 
-    return {}
+    # Merge all scopes: user scope → project scope (project wins on conflict)
+    merged: Dict[str, Any] = {}
+
+    # 1. Top-level mcpServers (user scope)
+    merged.update(config.get("mcpServers", {}))
+
+    # 2. Project-level mcpServers (exact cwd match)
+    if cwd_normalized in projects:
+        merged.update(projects[cwd_normalized].get("mcpServers", {}))
+
+    if merged:
+        logger.info(f"Loaded {len(merged)} MCP servers (merged): {list(merged.keys())}")
+
+    return merged
 
 
 class ClaudeService:
