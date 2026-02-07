@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+env/
+venv/
+ENV/
+.venv/
+env.bak/
+venv.bak/
+.conda/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+
+# Claude Code runtime
+.claude/
+
+# Debug and temporary test files (root only)
+/debug_*.py
+/test_debug_*.py
+test_performance_*.py
+test_user_*.py
+test_new_*.py
+
+# Development docs and tests (keep locally, not in repo)
+docs/
+tests/
+tools/
+
+# Development scripts and config
+CLAUDE.md
+pytest.ini
+run-local.sh
+run-tests.sh
+docker-compose.yml

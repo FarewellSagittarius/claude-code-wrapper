@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+tests/
+docs/
+*.md
+.env
+.claude/
+.claude.json
