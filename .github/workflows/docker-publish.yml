@@ -32,6 +32,11 @@ jobs:
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Delete old image versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: claude-code-wrapper
+          package-type: container
+          min-versions-to-keep: 1
