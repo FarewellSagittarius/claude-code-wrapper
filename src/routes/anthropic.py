@@ -389,11 +389,19 @@ async def anthropic_messages(
 
 
 def _get_delta_content(filtered: str, accumulated: str) -> str:
-    """Calculate new content delta to avoid duplicates."""
-    if filtered.startswith(accumulated):
-        return filtered[len(accumulated) :]
-    if accumulated and (filtered == accumulated or accumulated in filtered):
+    """Calculate new content delta to avoid duplicates.
+
+    SDK may send cumulative content (full text so far) or delta content
+    (just the new part). This function handles both cases safely.
+    """
+    if not accumulated:
+        return filtered
+    if filtered == accumulated:
         return ""
+    if filtered.startswith(accumulated):
+        return filtered[len(accumulated):]
+    # Content is a delta (not cumulative) or filter output diverged.
+    # Return as-is — caller appends to accumulated.
     return filtered
 
 
@@ -491,7 +499,7 @@ async def generate_anthropic_stream(ctx: MessagesContext):
             # Calculate delta to avoid duplicates
             new_content = _get_delta_content(filtered, accumulated_content)
             if new_content:
-                accumulated_content = filtered
+                accumulated_content += new_content
                 chunk_index += 1
                 log_stream_chunk(
                     request_id=ctx.request_id,
@@ -682,7 +690,7 @@ async def _consume_proxy_events(
 
             new_content = _get_delta_content(filtered, accumulated_content)
             if new_content:
-                accumulated_content = filtered
+                accumulated_content += new_content
                 chunk_index += 1
                 log_stream_chunk(
                     request_id=ctx.request_id,
@@ -885,7 +893,7 @@ async def generate_tool_proxy_response(
                     if filtered:
                         new_content = _get_delta_content(filtered, accumulated_text)
                         if new_content:
-                            accumulated_text = filtered
+                            accumulated_text += new_content
 
             elif etype == "tool_use_pending":
                 # Add accumulated text as a block
