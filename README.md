@@ -41,7 +41,7 @@ services:
       - LOAD_USER_MCP=false
       - LOG_TO_FILE=false
     volumes:
-      - ~/.claude/.credentials.json:/home/claude/.claude/.credentials.json:ro
+      - ~/.claude/.credentials.json:/home/claude/.claude/.credentials.json
     restart: unless-stopped
 ```
 
