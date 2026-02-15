@@ -19,7 +19,7 @@ class Settings:
     CLAUDE_CWD: Optional[str] = os.getenv("CLAUDE_CWD")
 
     # Internal API key for backend authentication
-    INTERNAL_API_KEY: str = os.getenv("INTERNAL_API_KEY", "sk-internal-dev")
+    INTERNAL_API_KEY: str = os.getenv("INTERNAL_API_KEY", "sk-claude-code-wrapper")
 
     # Debug
     DEBUG_MODE: bool = os.getenv("DEBUG_MODE", "false").lower() == "true"
