@@ -129,6 +129,8 @@ class ClaudeService:
                 options.tools = [t.strip() for t in settings.TOOLS.split(",")]
 
         options.permission_mode = "bypassPermissions"
+        options.thinking = {"type": "adaptive"}
+        options.effort = "high"
         options.setting_sources = ["user", "project"] if settings.LOAD_USER_MCP else []
 
         # User MCP servers

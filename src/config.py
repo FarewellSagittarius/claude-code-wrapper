@@ -39,5 +39,8 @@ class Settings:
     TOOLS: Optional[str] = None if os.getenv("TOOLS", "None").lower() == "none" else os.getenv("TOOLS")
     LOAD_USER_MCP: bool = os.getenv("LOAD_USER_MCP", "true").lower() == "true"
 
+    # Thinking: expose thinking blocks to client (default: filtered out)
+    EXPOSE_THINKING: bool = os.getenv("EXPOSE_THINKING", "false").lower() == "true"
+
 
 settings = Settings()

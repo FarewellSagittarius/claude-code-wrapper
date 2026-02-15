@@ -6,6 +6,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from ..config import settings
 from ..models.anthropic import Message
 from .base import FileCache, fetch_url
 
@@ -178,8 +179,9 @@ class AnthropicAdapter:
         if not content:
             return ""
 
-        # Remove <thinking> blocks
-        content = re.sub(r"<thinking>.*?</thinking>", "", content, flags=re.DOTALL)
+        # Remove <thinking> blocks (unless EXPOSE_THINKING is enabled)
+        if not settings.EXPOSE_THINKING:
+            content = re.sub(r"<thinking>.*?</thinking>", "", content, flags=re.DOTALL)
 
         # Extract content from <attempt_completion> blocks
         attempt_pattern = r"<attempt_completion>(.*?)</attempt_completion>"

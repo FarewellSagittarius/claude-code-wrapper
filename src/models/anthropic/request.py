@@ -18,13 +18,13 @@ class Message(BaseModel):
 class ThinkingConfig(BaseModel):
     """Anthropic extended thinking configuration.
 
-    DISABLED: Extended thinking is fully disabled. This config is accepted
-    for API compatibility but not processed. SDK does not support adaptive
-    thinking, and budget_tokens is deprecated on Opus 4.6.
+    Accepted for API compatibility but ignored. The wrapper internally uses
+    adaptive thinking with effort=high. Client-provided thinking config
+    (type, budget_tokens) is dropped.
     """
 
     type: Literal["enabled", "disabled", "adaptive"] = "enabled"
-    budget_tokens: Optional[int] = Field(default=None, ge=1024, description="Deprecated on Opus 4.6")
+    budget_tokens: Optional[int] = Field(default=None, ge=1024)
 
 
 class ToolDefinition(BaseModel):
@@ -58,7 +58,7 @@ class MessagesRequest(BaseModel):
     stream: Optional[bool] = False
     metadata: Optional[Dict[str, Any]] = None
 
-    # Extended thinking — DISABLED (accepted but ignored)
+    # Extended thinking — accepted but ignored (wrapper uses adaptive + effort=high internally)
     thinking: Optional[ThinkingConfig] = None
 
     # Tool definitions (Anthropic native format)
