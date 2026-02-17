@@ -41,7 +41,7 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Delete untagged images
+      - name: Delete old tagged versions (keep latest)
         uses: actions/github-script@v7
         with:
           script: |
@@ -53,9 +53,14 @@ jobs:
               username: owner,
               per_page: 100
             });
+            // Collect IDs referenced by tagged (latest) manifest
+            const latestVersion = versions.data.find(v => v.metadata?.container?.tags?.includes('latest'));
+            const latestId = latestVersion?.id;
+            // Delete old tagged versions (not latest), keep untagged (multi-arch sub-manifests)
             for (const version of versions.data) {
-              if (version.metadata?.container?.tags?.length === 0) {
-                console.log(`Deleting untagged version ${version.id}`);
+              const tags = version.metadata?.container?.tags || [];
+              if (version.id !== latestId && tags.length > 0) {
+                console.log(`Deleting old tagged version ${version.id} (tags: ${tags})`);
                 await github.rest.packages.deletePackageVersionForUser({
                   package_type: 'container',
                   package_name: packageName,
