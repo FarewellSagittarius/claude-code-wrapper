@@ -23,30 +23,23 @@ With LiteLLM (OpenAI API compatible):
 - MCP server configuration
 - Hash-based automatic session matching
 - SSE streaming
+- Multi-arch support (amd64 / arm64)
 
 ## Quick Start
 
-### Local (Recommended)
+### 1. Generate OAuth Token
+
+On a machine where you're logged into Claude:
 
 ```bash
-# Setup
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-# Run
-.venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8790
-
-# Run with custom config
-INTERNAL_API_KEY=my-key TOOLS="Read,Grep,Glob" .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8790
-
-# Run with hot-reload (development)
-.venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8790 --reload
+claude setup-token
 ```
 
-### Docker
+Copy the token (valid for ~1 year).
+
+### 2. Create docker-compose.yml
 
 ```yaml
-# docker-compose.yml
 services:
   claude-code-wrapper:
     container_name: claude-code-wrapper
@@ -55,25 +48,43 @@ services:
       - "8790:8790"
     environment:
       - INTERNAL_API_KEY=sk-claude-code-wrapper
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
       - TOOLS=Read,Grep,Glob,WebSearch,WebFetch
       - LOAD_USER_MCP=false
       - LOG_TO_FILE=false
-    volumes:
-      - ~/.claude/.credentials.json:/home/claude/.claude/.credentials.json
     restart: unless-stopped
 ```
 
+### 3. Create .env
+
+```bash
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxxxx
+```
+
+### 4. Start
+
 ```bash
 docker compose up -d
+```
+
+### Local Development
+
+```bash
+cp .env.example .env
+# Edit .env and set CLAUDE_CODE_OAUTH_TOKEN
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m src.main
 ```
 
 ## Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `INTERNAL_API_KEY` | Wrapper API auth key | `sk-claude-code-wrapper` |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Claude OAuth token (via `claude setup-token`) | *(required)* |
 | `PORT` | Server port | `8790` |
 | `HOST` | Listen address | `0.0.0.0` |
-| `INTERNAL_API_KEY` | Auth key | `sk-claude-code-wrapper` |
 | `TOOLS` | Tool config: unset=all, `""`=none, `"Task,Bash,Read"`=specific | all |
 | `LOAD_USER_MCP` | Load user MCP servers from `~/.claude.json` | `true` |
 | `EXPOSE_THINKING` | Pass `<thinking>` blocks through to client | `false` |
